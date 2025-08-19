@@ -7,3 +7,5 @@ python-jose
 python-multipart
 email-validator
 jinja2
+psycopg2-binary
+python-dotenv
