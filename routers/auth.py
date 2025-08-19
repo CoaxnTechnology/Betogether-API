@@ -1,9 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from database import SessionLocal
 from models import User
-import shutil, os, uuid, json, random
-from schemas import UserCreate, UserLogin, OTPRequest, OTPVerifyRequest, TokenRefreshRequest
+import shutil, os, uuid
+from schemas import UserLogin, OTPRequest, OTPVerifyRequest, TokenRefreshRequest
 from passlib.context import CryptContext
 from utils.jwt_handler import create_access_token, create_refresh_token, decode_token, create_guest_token
 from database import get_db
@@ -18,19 +17,12 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 UPLOAD_DIR = "static/profile_images"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
 # ------------------ GUEST-TOKEN ------------------
 @router.post("/guest-token")
-def generate_guest_token():
-    """Generate a guest token without login/register"""
+def generate_guest_token_endpoint():
+    """Generate a guest token without login/register."""
     token = create_guest_token()
-    return {"access_token": token, "token_type": "bearer"}
+    return {"IsSucces": True, "access_token": token, "token_type": "bearer", "type": "guest"}
 
 # ------------------ REGISTER ------------------
 @router.post("/register")
@@ -39,7 +31,7 @@ def register(
     email: str = Form(...),
     mobile: str = Form(...),
     password: str = Form(None),
-    register_type: str = Form(...), # manual or google_auth
+    register_type: str = Form(...),  # "manual" or "google_auth"
     uid: str = Form(None),
     profile_image: UploadFile = File(None),
     db: Session = Depends(get_db)
@@ -48,14 +40,15 @@ def register(
     try:
         validate_email(email)
     except EmailNotValidError as e:
-        return {"IsSucces": False, "message":str(e)}
+        return {"IsSucces": False, "message": str(e)}
 
     if register_type not in ["manual", "google_auth"]:
         return {"IsSucces": False, "message": "Invalid register_type."}
 
     if register_type == "manual" and not password:
-        return  {"IsSucces": False, "message": "Password required for manual login."}
+        return {"IsSucces": False, "message": "Password required for manual login."}
 
+    # Existing user?
     if db.query(User).filter(User.email == email).first():
         return {"IsSucces": False, "message": "Email already registered."}
 
@@ -63,14 +56,16 @@ def register(
     if register_type == "manual":
         hashed_password = pwd_context.hash(password)
 
+    # Save profile image if provided
     image_path = None
     if profile_image:
-        ext = profile_image.filename.split(".")[-1]
+        ext = os.path.splitext(profile_image.filename)[1].lstrip(".")
         image_name = f"{uuid.uuid4().hex}.{ext}"
         image_path = os.path.join(UPLOAD_DIR, image_name)
         with open(image_path, "wb") as buffer:
             shutil.copyfileobj(profile_image.file, buffer)
 
+    # Create user
     new_user = User(
         uid=uid,
         name=name,
@@ -78,45 +73,54 @@ def register(
         mobile=mobile,
         hashed_password=hashed_password,
         profile_image=image_path,
-        register_type=register_type
+        register_type=register_type,
+        otp_verified=False
     )
+
     if register_type == "manual":
-        otp_code, otp_expiry = generate_otp()  # ✅ get OTP from util
+        otp_code, otp_expiry = generate_otp()  # returns (code: str, expiry: datetime UTC)
         new_user.otp_code = otp_code
         new_user.otp_expiry = otp_expiry
         send_otp_email(email, otp_code)
     else:
+        # Social signup: mark verified
         new_user.otp_verified = True
 
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
-    return {"IsSucces": True, "message": "OTP sent. Please verify." if register_type == "manual" else "Registered successfully."}
+    return {
+        "IsSucces": True,
+        "message": "OTP sent. Please verify." if register_type == "manual" else "Registered successfully.",
+    }
 
-# ------------------ VERIFY OTP registration------------------
+# ------------------ VERIFY OTP (registration) ------------------
 @router.post("/verify-otp-reg")
-def verify_otp(payload: OTPVerifyRequest, db: Session = Depends(get_db)):
+def verify_otp_registration(payload: OTPVerifyRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == payload.email).first()
     if not user:
-        return{"IsSucces": False, "message":"User not found"}
+        return {"IsSucces": False, "message": "User not found"}
 
     if not user.otp_code or not user.otp_expiry:
-        return{"IsSucces": False, "message":"No OTP generated"}
+        return {"IsSucces": False, "message": "No OTP generated"}
 
     if datetime.utcnow() > user.otp_expiry:
-        return{"IsSucces": False, "message":"OTP expired"}
+        return {"IsSucces": False, "message": "OTP expired"}
 
     if user.otp_code != payload.otp:
-        return{"IsSucces": False,"message":"Invalid OTP"}
+        return {"IsSucces": False, "message": "Invalid OTP"}
 
+    # Mark verified and issue tokens
     user.otp_verified = True
     user.otp_code = None
     user.otp_expiry = None
+
     access_token = create_access_token({"sub": user.email})
     refresh_token = create_refresh_token({"sub": user.email})
     user.access_token = access_token
     user.refresh_token = refresh_token
+
     db.commit()
     db.refresh(user)
 
@@ -137,36 +141,43 @@ def verify_otp(payload: OTPVerifyRequest, db: Session = Depends(get_db)):
             "otp_verified": user.otp_verified
         }
     }
+
 # ------------------ LOGIN ------------------
 @router.post("/login")
 def login(user_data: UserLogin, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == user_data.email).first()
     if not user:
-        return {"IsSucces": False, "message": "User not found,check email & password."}
+        return {"IsSucces": False, "message": "User not found, check email & password."}
 
     if user_data.login_type == "manual":
         if not user.hashed_password or not user_data.password:
             return {"IsSucces": False, "message": "Password required."}
         if not pwd_context.verify(user_data.password, user.hashed_password):
-            return {"IsSucces": False, "message": "User not found,check email & password."}
+            return {"IsSucces": False, "message": "User not found, check email & password."}
 
+        # Send OTP for login
         otp_code, otp_expiry = generate_otp()
         user.otp_code = otp_code
         user.otp_expiry = otp_expiry
         user.otp_verified = False
         db.commit()
+
         send_otp_email(user.email, otp_code)
         return {"IsSucces": True, "message": "OTP sent for login. Please verify.", "require_otp": True}
 
     if user_data.login_type == "google_auth":
         if user_data.uid:
             user.uid = user_data.uid
+
         access_token = create_access_token({"sub": user.email})
         refresh_token = create_refresh_token({"sub": user.email})
         user.access_token = access_token
         user.refresh_token = refresh_token
+        user.otp_verified = True  # social auth treated as verified
+
         db.commit()
         db.refresh(user)
+
         return {
             "IsSucces": True,
             "message": "Login successful.",
@@ -179,34 +190,38 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
                 "email": user.email,
                 "mobile": user.mobile,
                 "profile_image": user.profile_image,
-                "login_type": user.login_type,
+                "register_type": user.register_type,
                 "otp_verified": user.otp_verified,
             }
         }
 
-# ------------------ VERIFY OTP login------------------
+    return {"IsSucces": False, "message": "Invalid login_type."}
+
+# ------------------ VERIFY OTP (login) ------------------
 @router.post("/verify-otp-login")
-def verify_otp(payload: OTPVerifyRequest, db: Session = Depends(get_db)):
+def verify_otp_login(payload: OTPVerifyRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == payload.email).first()
     if not user:
-        return{"IsSucces": False, "message":"User not found"}
+        return {"IsSucces": False, "message": "User not found"}
 
     if not user.otp_code or not user.otp_expiry:
-        return{"IsSucces": False, "message":"No OTP generated"}
+        return {"IsSucces": False, "message": "No OTP generated"}
 
     if datetime.utcnow() > user.otp_expiry:
-        return{"IsSucces": False, "message":"OTP expired"}
+        return {"IsSucces": False, "message": "OTP expired"}
 
     if user.otp_code != payload.otp:
-        return{"IsSucces": False,"message":"Invalid OTP"}
+        return {"IsSucces": False, "message": "Invalid OTP"}
 
     user.otp_verified = True
     user.otp_code = None
     user.otp_expiry = None
+
     access_token = create_access_token({"sub": user.email})
     refresh_token = create_refresh_token({"sub": user.email})
     user.access_token = access_token
     user.refresh_token = refresh_token
+
     db.commit()
     db.refresh(user)
 
@@ -217,42 +232,43 @@ def verify_otp(payload: OTPVerifyRequest, db: Session = Depends(get_db)):
         "refresh_token": refresh_token,
         "token_type": "bearer",
         "user": {
-            "id": user.id,
-            "uid": user.uid,
-            "name": user.name,
-            "email": user.email,
-            "mobile": user.mobile,
-            "profile_image": user.profile_image,
-            "login_type":user.login_type,
-            "otp_verified": user.otp_verified
+                "id": user.id,
+                "uid": user.uid,
+                "name": user.name,
+                "email": user.email,
+                "mobile": user.mobile,
+                "profile_image": user.profile_image,
+                "register_type": user.register_type,
+                "otp_verified": user.otp_verified
         }
     }
+
 # ------------------ RESET OTP ------------------
 @router.post("/reset-otp")
 def reset_otp(payload: OTPRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == payload.email).first()
     if not user:
-        return{"IsSucces": False, "message":"User not found"}
+        return {"IsSucces": False, "message": "User not found"}
 
     if user.register_type != "manual":
-        return{"IsSucces": False, "message":"OTP not required for social login"}
+        return {"IsSucces": False, "message": "OTP not required for social login"}
 
     otp_code, otp_expiry = generate_otp()
     user.otp_code = otp_code
     user.otp_expiry = otp_expiry
     user.otp_verified = False
     db.commit()
-    send_otp_email(user.email, otp_code)
 
+    send_otp_email(user.email, otp_code)
     return {"IsSucces": True, "message": "New OTP sent successfully."}
 
 # ------------------ REFRESH TOKEN ------------------
 @router.post("/refresh-token")
-def refresh_token(payload: TokenRefreshRequest):
+def refresh_token_endpoint(payload: TokenRefreshRequest):
     decoded = decode_token(payload.refresh_token)
-    if not decoded:
-        return{"IsSucces": False, "message":"Invalid refresh token."}
+    if not decoded or decoded.get("type") != "user":
+        return {"IsSucces": False, "message": "Invalid refresh token."}
+
     email = decoded.get("sub")
     new_access_token = create_access_token({"sub": email})
-    return {"access_token": new_access_token, "token_type": "bearer"}
-
+    return {"IsSucces": True, "access_token": new_access_token, "token_type": "bearer"}
