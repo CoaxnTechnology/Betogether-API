@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from routers import auth, users, category, search, profile
+from routers import auth, users, category, search, profile, guest
 from database import SessionLocal, engine
 from models import Category, Base
 from contextlib import asynccontextmanager
@@ -68,3 +68,4 @@ app.include_router(profile.router, prefix="/api")
 def root():
 
     return {"message": "BETOGETHER API is running"}
+
