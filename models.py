@@ -40,6 +40,7 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     access_token = Column(String, nullable=True)
     refresh_token = Column(String, nullable=True)
+    guest_token = Column(String, nullable=True)
     # Relationships
     languages = relationship("Language", secondary=user_languages, back_populates="users")
     interests = relationship("Category", secondary=user_interests, back_populates="users")
@@ -97,4 +98,5 @@ user_languages = Table(
     interests = relationship("Interest", secondary=user_interests, back_populates="users")
     # Many-to-many with Language only
     languages = relationship("Language", secondary=user_languages, back_populates="users", lazy="joined")
+
 """
