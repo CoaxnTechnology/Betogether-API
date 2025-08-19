@@ -56,6 +56,7 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+app.include_router(guest.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(category.router, prefix="/api")
@@ -65,4 +66,5 @@ app.include_router(profile.router, prefix="/api")
 
 @app.get("/")
 def root():
+
     return {"message": "BETOGETHER API is running"}
