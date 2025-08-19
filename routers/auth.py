@@ -17,13 +17,6 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 UPLOAD_DIR = "static/profile_images"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# ------------------ GUEST-TOKEN ------------------
-@router.post("/guest-token")
-def generate_guest_token_endpoint():
-    """Generate a guest token without login/register."""
-    token = create_guest_token()
-    return {"IsSucces": True, "access_token": token, "token_type": "bearer", "type": "guest"}
-
 # ------------------ REGISTER ------------------
 @router.post("/register")
 def register(
@@ -272,3 +265,4 @@ def refresh_token_endpoint(payload: TokenRefreshRequest):
     email = decoded.get("sub")
     new_access_token = create_access_token({"sub": email})
     return {"IsSucces": True, "access_token": new_access_token, "token_type": "bearer"}
+
