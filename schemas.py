@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List, Union
 from datetime import datetime
+from pydantic import BaseModel
 
 # ---------- Registration ----------
 class UserCreate(BaseModel):
@@ -141,3 +142,4 @@ class UserLocation(BaseModel):
     longitude: float
 
     radius_km: Optional[float] = None  # optional filtering
+
