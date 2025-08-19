@@ -36,7 +36,13 @@ class Token(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
 
-
+class GuestTokenSchema(BaseModel):
+    guest_token: str
+    token_type: str = "bearer"
+    
+    class config:
+        orm_mode:True
+        
 # ---------- Category ----------
 class CategoryOut(BaseModel):
     id: int
@@ -133,4 +139,5 @@ class TokenRefreshRequest(BaseModel):
 class UserLocation(BaseModel):
     latitude: float
     longitude: float
+
     radius_km: Optional[float] = None  # optional filtering
