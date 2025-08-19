@@ -11,11 +11,6 @@ from models import User
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    """
-    Decode JWT, validate, and return a minimal identity object.
-    - Guest token: return {"id": <guest_uuid>, "role": "guest"}
-    - User token : DB lookup by email (sub) then return {"id": <user_id>, "email": <email>, "role": "user"}
-    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or expired token.",
@@ -30,18 +25,18 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         if not sub or not token_type:
             raise credentials_exception
 
+        # ✅ Guest token
         if token_type == "guest":
             return {"id": sub, "role": "guest"}
 
+        # ✅ User token
         if token_type == "user":
             user = db.query(User).filter(User.email == sub).first()
             if not user:
                 raise credentials_exception
             return {"id": user.id, "email": user.email, "role": "user"}
 
-        # Unknown token type
         raise credentials_exception
 
     except JWTError:
         raise credentials_exception
-
