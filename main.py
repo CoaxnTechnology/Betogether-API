@@ -5,6 +5,11 @@ from routers import auth, users, category, search, profile, guest
 from database import SessionLocal, engine
 from models import Category, Base
 from contextlib import asynccontextmanager
+from fastapi.responses import HTMLResponse
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
 def seed_default_categories():
     db = SessionLocal()
@@ -66,6 +71,12 @@ app.include_router(profile.router, prefix="/api")
 
 @app.get("/")
 def root():
-
     return {"message": "BETOGETHER API is running"}
+
+@app.get("/terms", response_class=HTMLResponse)
+def get_terms():
+    file_path = os.path.join(TEMPLATES_DIR, "terms_and_conditions.html")
+    with open(file_path, "r", encoding="utf-8") as f:
+        return f.read()
+
 
