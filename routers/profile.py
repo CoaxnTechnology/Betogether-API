@@ -2,11 +2,36 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db, SessionLocal
 from models import User, Category, Language
-from schemas import UserProfileUpdate, UserProfileResponse, BaseResponse
+from schemas import UserProfileUpdate, UserProfileResponse, BaseResponse, UserEmailRequest, UserProfileWithServices
 from dependencies import get_current_user
+from schemas import UserEmailRequest, UserProfileWithServices
+from utils.image_utils import get_full_image_url
 
-router = APIRouter(tags=["Profile"])
+router = APIRouter(tags=["Profile"],
+    dependencies=[Depends(get_current_user)]  # ✅ Enforce authentication for all routes in this router)
+)
 
+# profile.py
+@router.post("/user/profile", response_model=UserProfileWithServices)
+def get_user_profile_by_email(
+    request: UserEmailRequest, db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return UserProfileWithServices(
+        id=user.id,
+        name=user.name,
+        email=user.email,
+        profile_image=get_full_image_url(user.profile_image),
+        bio=user.bio,
+        languages=user.languages,
+        interests=user.interests,
+    )
+# services_count=len(user.services),
+        #services=user.services,
+"""
 # -------- Get Current User Profile --------
 @router.get("/me", response_model=BaseResponse)
 def get_my_profile(current_user: User = Depends(get_current_user)):
@@ -141,3 +166,4 @@ def update_user_profile_by_id(
         message=f"User {user_id} profile updated successfully" if updated else "No changes made",
         data={"user": UserProfileResponse.from_orm(user)}
     )
+"""
