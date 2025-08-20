@@ -10,6 +10,7 @@ from utils.email_utils import send_otp_email
 from utils.otp_utils import generate_otp
 from datetime import datetime
 from email_validator import validate_email, EmailNotValidError
+from utils.image_utils import get_full_image_url
 
 router = APIRouter(tags=["Auth"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -129,7 +130,7 @@ def verify_otp_registration(payload: OTPVerifyRequest, db: Session = Depends(get
             "name": user.name,
             "email": user.email,
             "mobile": user.mobile,
-            "profile_image": user.profile_image,
+            "profile_image": get_full_image_url(user.profile_image),
             "register_type": user.register_type,
             "otp_verified": user.otp_verified
         }
@@ -182,7 +183,7 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
                 "name": user.name,
                 "email": user.email,
                 "mobile": user.mobile,
-                "profile_image": user.profile_image,
+                "profile_image": get_full_image_url(user.profile_image),
                 "register_type": user.register_type,
                 "otp_verified": user.otp_verified,
             }
@@ -230,7 +231,7 @@ def verify_otp_login(payload: OTPVerifyRequest, db: Session = Depends(get_db)):
                 "name": user.name,
                 "email": user.email,
                 "mobile": user.mobile,
-                "profile_image": user.profile_image,
+                "profile_image": get_full_image_url(user.profile_image),
                 "register_type": user.register_type,
                 "otp_verified": user.otp_verified
         }
@@ -265,4 +266,5 @@ def refresh_token_endpoint(payload: TokenRefreshRequest):
     email = decoded.get("sub")
     new_access_token = create_access_token({"sub": email})
     return {"IsSucces": True, "access_token": new_access_token, "token_type": "bearer"}
+
 
