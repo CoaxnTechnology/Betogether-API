@@ -25,7 +25,7 @@ def get_user_profile_by_email(
         name=user.name,
         email=user.email,
         profile_image=get_full_image_url(user.profile_image),
-        bio=user.bio,
+        bio=user.bio or "",
         languages=user.languages,
         interests=user.interests,
     )
@@ -167,3 +167,4 @@ def update_user_profile_by_id(
         data={"user": UserProfileResponse.from_orm(user)}
     )
 """
+
