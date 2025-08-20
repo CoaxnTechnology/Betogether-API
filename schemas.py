@@ -143,3 +143,18 @@ class UserLocation(BaseModel):
 
     radius_km: Optional[float] = None  # optional filtering
 
+class UserEmailRequest(BaseModel):
+    email: EmailStr
+
+class UserProfileWithServices(BaseModel):
+    id: int
+    name: str
+    email: EmailStr
+    profile_image: Optional[str]
+    bio: Optional[str]
+    languages: List[LanguageOut]
+    interests: List[CategoryOut]
+
+    class Config:
+        orm_mode = True
+
