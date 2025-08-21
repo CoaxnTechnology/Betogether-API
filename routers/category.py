@@ -35,11 +35,23 @@ def haversine(lat1, lon1, lat2, lon2):
 @router.get("/category")
 def get_all_categories(db: Session = Depends(get_db)):
     categories = db.query(Category).all()
+    data = [
+        {
+            "id": c.id,
+            "name": c.name,
+            "image": f"{BASE_URL}{c.image}" if c.image and not c.image.startswith("http") else c.image,
+            "latitude": c.latitude,
+            "longitude": c.longitude,
+            "tags": c.tags or []  # ✅ always return list, not None
+        }
+        for c in categories
+    ]
     return {
         "IsSuccess": True,
         "message": "Categories retrieved successfully" if categories else "No categories found",
-        "data": categories
+        "data": data
     }
+
 
 # -------- Get Category by ID or Name --------
 @router.get("/category/{identifier}")
@@ -52,8 +64,19 @@ def get_category(identifier: str, db: Session = Depends(get_db)):
     if not category:
         return {"IsSuccess": False, "message": "Category not found"}
 
-    return {"IsSuccess": True, "message": "Category retrieved successfully", "data": category}
+    data = {
+        "id": category.id,
+        "name": category.name,
+        "image": f"{BASE_URL}{category.image}" if category.image and not category.image.startswith("http") else category.image,
+        "latitude": category.latitude,
+        "longitude": category.longitude,
+        "tags": category.tags or []  # ✅ return empty list instead of null
+    }
 
+    return {"IsSuccess": True, "message": "Category retrieved successfully", "data": data}
+
+
+# -------- Find Nearest Category --------
 @router.post("/category/nearest")
 def assign_nearest_category(location: UserLocation, db: Session = Depends(get_db)):
     categories = db.query(Category).all()
@@ -64,7 +87,6 @@ def assign_nearest_category(location: UserLocation, db: Session = Depends(get_db
             "categories": []
         }
 
-    # calculate distances
     distances = []
     for cat in categories:
         if cat.latitude is None or cat.longitude is None:
@@ -73,13 +95,13 @@ def assign_nearest_category(location: UserLocation, db: Session = Depends(get_db
         distances.append({
             "id": cat.id,
             "category": cat.name,
-            "image": f"{BASE_URL}{cat.image}" if not cat.image.startswith("http") else cat.image,
+            "image": f"{BASE_URL}{cat.image}" if cat.image and not cat.image.startswith("http") else cat.image,
             "latitude": cat.latitude,
             "longitude": cat.longitude,
+            "tags": cat.tags or [],  # ✅ add tags in nearest response
             "distance_km": round(dist, 2)
         })
 
-    # sort by distance
     distances.sort(key=lambda x: x["distance_km"])
 
     # ✅ CASE 1: user gave a radius
@@ -89,7 +111,7 @@ def assign_nearest_category(location: UserLocation, db: Session = Depends(get_db
             return {
                 "IsSuccess": False,
                 "message": "No categories available in this location.",
-                "categories": distances  # all categories with distance, sorted
+                "categories": distances
             }
         return {
             "IsSuccess": True,
@@ -101,7 +123,7 @@ def assign_nearest_category(location: UserLocation, db: Session = Depends(get_db
     if not distances:
         return {
             "IsSuccess": False,
-            "message": "No valid categories with coordinates",
+            "message": "No categories available in this location.",
             "categories": []
         }
 
