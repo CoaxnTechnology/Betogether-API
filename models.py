@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Table, ForeignKey, Float, Boolean, DateTime, Text
+from sqlalchemy import Column, Integer, String, Table, ForeignKey, Float, Boolean, DateTime, Text, ARRAY
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
@@ -54,6 +54,7 @@ class Category(Base):
     image = Column(String, nullable=True)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
+    tags = Column(ARRAY(String), nullable=True)   # ✅ ARRAY instead of JSON
 
     users = relationship("User", secondary=user_interests, back_populates="interests")
 
@@ -100,3 +101,4 @@ user_languages = Table(
     languages = relationship("Language", secondary=user_languages, back_populates="users", lazy="joined")
 
 """
+
