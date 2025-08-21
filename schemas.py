@@ -51,7 +51,8 @@ class CategoryOut(BaseModel):
     image: Optional[str] = None
     latitude: Optional[float] = None   # ✅ allows None
     longitude: Optional[float] = None  # ✅ allows None
-    
+    tags: List[str] = []   # ✅ array in API response
+
     class Config:
         from_attributes = True
 
@@ -157,4 +158,5 @@ class UserProfileWithServices(BaseModel):
 
     class Config:
         orm_mode = True
+
 
