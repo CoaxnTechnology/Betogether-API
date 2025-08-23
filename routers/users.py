@@ -4,11 +4,15 @@ from database import get_db, SessionLocal
 from models import User
 from dependencies import get_current_user
 from utils.image_utils import get_full_image_url
+import os
 
 router = APIRouter(
     tags=["Users"],
     dependencies=[Depends(get_current_user)]  # Enforce authentication
 )
+
+# Ensure the profile_images directory exists
+os.makedirs("static/profile_images", exist_ok=True)
 
 def get_db():
     db = SessionLocal()
@@ -49,4 +53,5 @@ def get_user_by_id(id: int, db: Session = Depends(get_db)):
         "message": "User fetched successfully",
         "data": user_dict
     }
+
 
