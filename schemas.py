@@ -109,6 +109,7 @@ class UserResponse(BaseModel):
     mobile: str
     profile_image: Optional[str] = None
     register_type: Optional[str] = None
+    login_type:Optional[str]=None
     otp_verified: bool
 
     class Config:
@@ -158,5 +159,6 @@ class UserProfileWithServices(BaseModel):
 
     class Config:
         orm_mode = True
+
 
 
