@@ -221,21 +221,3 @@ def get_terms():
     with open(file_path, "r", encoding="utf-8") as f:
         return f.read()
 
-
-# ✅ Serve Vite React Admin Panel
-ADMIN_BUILD_DIR = os.path.join(BASE_DIR, "admin-panel", "build")
-
-if os.path.exists(ADMIN_BUILD_DIR):
-    # Serve assets (JS/CSS/images)
-    app.mount(
-        "/admin-panel/assets",
-        StaticFiles(directory=os.path.join(ADMIN_BUILD_DIR, "assets")),
-        name="admin-panel-assets",
-    )
-
-    @app.get("/admin-panel", response_class=HTMLResponse)
-    @app.get("/admin-panel/{full_path:path}", response_class=HTMLResponse)
-    async def serve_admin_panel(full_path: str = ""):
-        index_file = os.path.join(ADMIN_BUILD_DIR, "index.html")
-        return FileResponse(index_file)
-

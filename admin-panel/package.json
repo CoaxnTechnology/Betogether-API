@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "homepage": "/admin/",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -29,5 +30,9 @@
     "postcss": "^8.4.32",
     "tailwindcss": "^3.3.6",
     "vite": "^5.0.8"
-  }
+  },
+  "browserslist": [
+    "defaults"
+  ]
 }
+
