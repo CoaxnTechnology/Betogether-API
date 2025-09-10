@@ -1,8 +1,7 @@
-from sqlalchemy import Column, Integer, String, Table, ForeignKey, Float, Boolean, DateTime, Text, ARRAY
+from sqlalchemy import Column, Integer, String, Table, ForeignKey, Float, Boolean, DateTime, Text, ARRAY,JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
-
 
 # Association Tables (Many-to-Many)
 user_languages = Table(
@@ -29,9 +28,12 @@ class User(Base):
     hashed_password = Column(String, nullable=True)  # Nullable for Google signup
     profile_image = Column(String, nullable=True)
     bio = Column(Text, nullable=True)
+    city = Column(String)  # ✅ Add this
     register_type = Column(String, nullable=False, default="manual")  # manual or google_auth
     login_type = Column(String, nullable=False, default="manual")  # manual or google_auth
-    
+    status = Column(String, default="active")  # ✅ Add this
+    is_active = Column(Boolean, default=True)
+
     otp_code = Column(String(4), nullable=True)  # 4-digit OTP
     otp_expiry = Column(DateTime, nullable=True)  # OTP expiry
     otp_verified = Column(Boolean, default=False)
@@ -47,6 +49,16 @@ class User(Base):
      # Relationships
     services = relationship("Service", back_populates="owner")
 
+     # Location / admin UI fields
+    city = Column(String, nullable=True, index=True)   # shown in admin users list
+    status = Column(String, nullable=False, default="active")  # active / inactive / banned
+    is_active = Column(Boolean, default=True)  # boolean quick-check for active/inactive
+
+     # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_login = Column(DateTime, nullable=True)
+
 class Category(Base):
     __tablename__ = "categories"
     id = Column(Integer, primary_key=True, index=True)
@@ -55,6 +67,15 @@ class Category(Base):
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
     tags = Column(ARRAY(String), nullable=True)   # ✅ ARRAY instead of JSON
+
+    
+    # Revenue / discount fields
+    provider_share = Column(Float, nullable=False, default=80.0)
+    seeker_share = Column(Float, nullable=False, default=20.0)
+    discount_percentage = Column(Float, nullable=False, default=0.0)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     users = relationship("User", secondary=user_interests, back_populates="interests")
 
@@ -87,18 +108,51 @@ class Service(Base):
     category = relationship("Category", back_populates="services")
 
 
-"""
-# Association table for user languages (many-to-many)
-user_languages = Table(
-    "user_languages",
-    Base.metadata,
-    Column("user_id", Integer, ForeignKey("users.id")),
-    Column("language_id", Integer, ForeignKey("languages.id")),
-)
- # Many-to-many relationship with interests
-    interests = relationship("Interest", secondary=user_interests, back_populates="users")
-    # Many-to-many with Language only
-    languages = relationship("Language", secondary=user_languages, back_populates="users", lazy="joined")
+# ------------------------
+# FakeUser model (admin-created test users)
+# ------------------------
+class FakeUser(Base):
+    __tablename__ = "fake_users"
 
-"""
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False, index=True)
+    city = Column(String, nullable=False)
+    target_audience = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="active")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
+
+# ------------------------
+# Settings model (simple single-row/kv fallback)
+# ------------------------
+class Settings(Base):
+    """
+    Simple settings table. You may prefer a key/value table or a single-row JSON config.
+    This example uses a JSON column to hold settings such as revenue split and discount config.
+    """
+    __tablename__ = "settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(128), unique=True, nullable=True)  # optional: key-based entries
+    value = Column(JSON, nullable=True)  # store arbitrary settings as JSON
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+# ------------------------
+# Admin model
+# ------------------------
+class Admin(Base):
+    __tablename__ = "admins"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)   # store only hashed password
+    role = Column(String(50), nullable=False, default="admin")  # admin / superadmin
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
