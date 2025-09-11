@@ -25,6 +25,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { name: 'Categories', href: '/categories', icon: Tag },
     { name: 'Users', href: '/users', icon: Users },
     { name: 'Fake Users', href: '/fake-users', icon: UserPlus },
+    { name: 'Settings', href: '/settings', icon: Settings },
   ];
 
   return (

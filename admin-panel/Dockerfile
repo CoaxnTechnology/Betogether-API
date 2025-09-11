@@ -1,3 +1,4 @@
+  GNU nano 7.2                                                                     Dockerfile                                                                               
 # Stage 1: Build React app
 FROM node:18 AS build
 

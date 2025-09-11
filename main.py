@@ -1,11 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from routers import auth, users, category, search, profile, guest
+from routers import auth, users, category, search, profile, guest, admin
 from database import SessionLocal, engine
 from models import Category, Base
 from contextlib import asynccontextmanager
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -208,6 +208,7 @@ app.include_router(users.router, prefix="/api")
 app.include_router(category.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
 app.include_router(profile.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")
 
 
 @app.get("/")
@@ -220,4 +221,3 @@ def get_terms():
     file_path = os.path.join(TEMPLATES_DIR, "terms_and_conditions.html")
     with open(file_path, "r", encoding="utf-8") as f:
         return f.read()
-

@@ -1,7 +1,6 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, validator
 from typing import Optional, List, Union
 from datetime import datetime
-from pydantic import BaseModel
 
 # ---------- Registration ----------
 class UserCreate(BaseModel):
@@ -43,7 +42,7 @@ class GuestTokenSchema(BaseModel):
     
     class config:
         orm_mode:True
-        
+
 # ---------- Category ----------
 class CategoryOut(BaseModel):
     id: int
@@ -52,6 +51,11 @@ class CategoryOut(BaseModel):
     latitude: Optional[float] = None   # ✅ allows None
     longitude: Optional[float] = None  # ✅ allows None
     tags: List[str] = []   # ✅ array in API response
+    # Admin fields
+    provider_share: Optional[float] = 80.0
+    seeker_share: Optional[float] = 20.0
+    discount_percentage: Optional[float] = 0.0
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -80,7 +84,7 @@ class UserProfileUpdate(BaseModel):
     bio: Optional[str] = None
     profile_image: Optional[str] = None
     languages: Optional[List[str]] = None  # language IDs only
-    interests: Optional[List[str]] = None  # category IDs only
+    interests: Optional[List[str]] = None  # category IDs only"""
 
 
 # ---------- Profile Response ----------
@@ -94,6 +98,8 @@ class UserProfileResponse(BaseModel):
     bio: Optional[str]
     languages: List[LanguageOut] = []
     interests: List[CategoryOut] = []
+    login_type: str
+    register_type: str
     otp_verified: bool
 
     class Config:
@@ -112,9 +118,36 @@ class UserResponse(BaseModel):
     login_type:Optional[str]=None
     otp_verified: bool
 
+    # Admin list-friendly fields
+    city: Optional[str] = None
+    status: Optional[str] = "active"
+    is_active: Optional[bool] = True
+    login_provider: Optional[str] = None
+    last_login: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+
     class Config:
         from_attributes = True
 
+
+# ---------- Fake User Schema ----------
+class FakeUserCreate(BaseModel):
+    name: Optional[str] = None  # if not provided generator will create one
+    email: Optional[EmailStr] = None
+    city: str
+    target_audience: Optional[str] = None
+
+class FakeUserOut(BaseModel):
+    id: int
+    name: str
+    email: EmailStr
+    city: str
+    target_audience: Optional[str] = None
+    status: Optional[str] = "active"
+    created_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
 
 # ---------- Auth Response ----------
 class AuthResponse(BaseModel):
@@ -142,11 +175,65 @@ class TokenRefreshRequest(BaseModel):
 class UserLocation(BaseModel):
     latitude: float
     longitude: float
-
     radius_km: Optional[float] = None  # optional filtering
 
 class UserEmailRequest(BaseModel):
     email: EmailStr
+
+
+# ---------- Settings / Revenue ----------
+class RevenueSplit(BaseModel):
+    provider: float
+    seeker: float
+    platform: float
+
+class DiscountSettings(BaseModel):
+    global_discount: Optional[float] = 0.0
+    category_wise: Optional[bool] = False
+    seasonal: Optional[bool] = False
+
+class AdminSettingsOut(BaseModel):
+    revenue_split: RevenueSplit
+    discounts: DiscountSettings
+
+    class Config:
+        orm_mode = True
+
+# ---------- Admin Schemas ----------
+
+class AdminCreate(BaseModel):
+    """Schema for creating a new admin (registration)."""
+    name: str
+    email: EmailStr
+    password: str  # plain password, will be hashed before storing
+
+
+class AdminLogin(BaseModel):
+    """Schema for admin login."""
+    email: EmailStr
+    password: str
+
+
+class AdminOut(BaseModel):
+    """Schema for returning admin details (safe response)."""
+    id: int
+    name: str
+    email: EmailStr
+    role: Optional[str] = "admin"
+    is_active: bool
+    created_at: Optional[datetime]
+
+    class Config:
+        orm_mode = True
+
+
+class AdminAuthResponse(BaseModel):
+    """Schema for admin login response with token."""
+    IsSuccess: bool
+    message: Optional[str] = None
+    admin_token: Optional[str] = None
+    token_type: str = "bearer"
+    admin: Optional[AdminOut] = None
 
 class UserProfileWithServices(BaseModel):
     id: int
@@ -158,7 +245,4 @@ class UserProfileWithServices(BaseModel):
     interests: List[CategoryOut]
 
     class Config:
-        orm_mode = True
-
-
-
+        from_attributes = True

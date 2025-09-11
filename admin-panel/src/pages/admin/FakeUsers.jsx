@@ -1,454 +1,526 @@
-import React, { useState } from 'react';
-import { UserPlus, MapPin, Users, Shuffle, Download, Ban, CheckCircle, Upload } from 'lucide-react';
-import citiesData from '../../data/cities.json';
-import Papa from 'papaparse';
+// src/pages/admin/FakeUsers.jsx
+import React, { useEffect, useState } from "react";
+import axios from "../../utils/api";
+import { useNavigate } from "react-router-dom";
 
+/* ----------------------- Config / constants ----------------------- */
+const CITY_OPTIONS = [
+  { value: "Barcelona", label: "Barcelona (Launch City)" },
+  { value: "Madrid", label: "Madrid" },
+  { value: "Paris", label: "Paris" },
+  { value: "Rome", label: "Rome" },
+  { value: "Berlin", label: "Berlin" },
+];
+
+const AUDIENCES = ["tourists", "students", "professionals", "families", "other"];
+const MAX_EXPORT_ROWS = 10000;
+
+/* ----------------------- Helpers ----------------------- */
+const audienceLabelFromString = (s) => {
+  if (!s) return "Other";
+  const v = s.toString().toLowerCase();
+  if (v.includes("tour")) return "Tourists";
+  if (v.includes("student")) return "Students";
+  if (v.includes("prof")) return "Professionals";
+  if (v.includes("family")) return "Families";
+  return v.charAt(0).toUpperCase() + v.slice(1);
+};
+
+const cityLabel = (key) => {
+  if (!key) return "Unknown";
+  const s = key.toString().toLowerCase();
+  if (s.includes("barc")) return "Barcelona, Spain";
+  if (s.includes("madrid")) return "Madrid, Spain";
+  if (s.includes("paris")) return "Paris, France";
+  if (s.includes("rome")) return "Rome, Italy";
+  if (s.includes("berlin")) return "Berlin, Germany";
+  return key;
+};
+
+const formatDate = (raw) => {
+  if (!raw) return "-";
+  try {
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return raw;
+    return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+  } catch {
+    return raw;
+  }
+};
+
+/* ----------------------- Component ----------------------- */
 const FakeUsers = () => {
-  const [fakeUsers, setFakeUsers] = useState([
-    {
-      id: '1',
-      name: 'Alex Martinez',
-      email: 'alex.martinez.fake@betogether.com',
-      city: 'Barcelona',
-      country: 'Spain',
-      targetAudience: 'tourists',
-      createdAt: '2025-01-10T10:30:00Z',
-      status: 'active',
-    },
-    {
-      id: '2',
-      name: 'Sophie Chen',
-      email: 'sophie.chen.fake@betogether.com',
-      city: 'Barcelona',
-      country: 'Spain',
-      targetAudience: 'students',
-      createdAt: '2025-01-09T15:45:00Z',
-      status: 'active',
-    },
-  ]);
+  const [usersByCity, setUsersByCity] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
 
-  const [formData, setFormData] = useState({
-    city: 'Barcelona',
-    country: 'Spain',
-    targetAudience: 'tourists',
-    count: 5,
-  });
+  const [city, setCity] = useState(CITY_OPTIONS[0].value);
+  const [audience, setAudience] = useState(AUDIENCES[0]);
+  const [count, setCount] = useState(5);
 
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [importFile, setImportFile] = useState(null);
+  // Import state
+  const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+  const [importResult, setImportResult] = useState(null);
+  const [importError, setImportError] = useState(null);
 
-  const downloadCSV = () => {
-    const csvData = fakeUsers.map(user => ({
-      ID: user.id,
-      Name: user.name,
-      Email: user.email,
-      City: user.city,
-      Country: user.country,
-      'Target Audience': user.targetAudience,
-      Status: user.status,
-      'Created At': new Date(user.createdAt).toLocaleDateString(),
-    }));
+  const navigate = useNavigate();
 
-    const csv = Papa.unparse(csvData);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `fake_users_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const normalizeUsersArray = (maybe) => {
+    if (!maybe) return [];
+    if (Array.isArray(maybe)) return maybe;
+    if (typeof maybe === "object") return Object.values(maybe);
+    return [];
   };
 
-  const handleImportCSV = (e) => {
-    const file = e.target.files[0];
-    if (file && file.type === 'text/csv') {
-      setImportFile(file);
-      setShowImportModal(true);
+  const loadFakeUsers = async () => {
+    setLoading(true);
+    try {
+      const res = await axios.get("/admin/fake-users");
+      const payload = res?.data ?? res ?? {};
+      const dataArray =
+        payload?.data?.fake_users ??
+        payload?.fake_users ??
+        payload?.data ??
+        payload;
+      const items = normalizeUsersArray(dataArray);
+
+      const grouped = items.reduce((acc, u) => {
+        const cityKey = (u.city ?? u.city_name ?? u.location ?? "unknown")
+          .toString()
+          .toLowerCase();
+
+        const statusRaw =
+          (u.status && String(u.status).toLowerCase()) ??
+          (typeof u.active === "boolean"
+            ? u.active
+              ? "active"
+              : "blocked"
+            : undefined) ??
+          "active";
+
+        // attempt numeric server id if available (not required for email flow)
+        const possibleServerId = u.id ?? u._id ?? null;
+        let numericServerId = null;
+        if (possibleServerId !== null && possibleServerId !== undefined) {
+          const n = Number(possibleServerId);
+          if (Number.isInteger(n)) numericServerId = n;
+        }
+
+        acc[cityKey] = acc[cityKey] || [];
+        acc[cityKey].push({
+          id: u.id ?? u._id ?? u.email ?? Math.random().toString(36).slice(2),
+          serverId: numericServerId,
+          name: u.name ?? u.full_name ?? u.displayName ?? "Unnamed",
+          email: u.email ?? u.email_address ?? "",
+          target_audience: u.target_audience ?? u.audience ?? "other",
+          status: statusRaw,
+          created_at:
+            u.created_at ??
+            u.createdAt ??
+            u.created ??
+            u.registered_at ??
+            "",
+          raw: u,
+        });
+        return acc;
+      }, {});
+      setUsersByCity(grouped);
+    } catch (err) {
+      console.error("Failed to load fake users", err);
+      setUsersByCity({});
+    } finally {
+      setLoading(false);
     }
   };
 
-  const processImportCSV = () => {
-    if (!importFile) return;
+  useEffect(() => {
+    loadFakeUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    Papa.parse(importFile, {
-      header: true,
-      complete: (results) => {
-        const importedUsers = results.data
-          .filter(row => row.Name && row.Email && row.City)
-          .map((row, index) => ({
-            id: Date.now().toString() + index,
-            name: row.Name,
-            email: row.Email,
-            city: row.City || 'Barcelona',
-            country: row.Country || 'Spain',
-            targetAudience: row['Target Audience'] || 'tourists',
-            createdAt: new Date().toISOString(),
-            status: row.Status || 'active',
-          }));
+  /* ----------------------- Actions ----------------------- */
 
-        setFakeUsers(prev => [...importedUsers, ...prev]);
-        setShowImportModal(false);
-        setImportFile(null);
-      },
-      error: (error) => {
-        console.error('CSV parsing error:', error);
-        alert('Error parsing CSV file. Please check the format.');
+  const handleGenerate = async () => {
+    setGenerating(true);
+    try {
+      const body = new URLSearchParams();
+      body.append("city", city);
+      body.append("target_audience", audience);
+      body.append("number", Number(count || 1));
+
+      await axios.post("/admin/fake-users/generate", body, {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      });
+      await loadFakeUsers();
+    } catch (err) {
+      console.error("Failed to generate fake users", err);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  // Inline Import
+  const handleImport = async () => {
+    setImportResult(null);
+    setImportError(null);
+
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".csv,text/csv";
+    input.onchange = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setImporting(true);
+      setImportProgress(0);
+      try {
+        const form = new FormData();
+        form.append("file", file);
+
+        const res = await axios.post("/admin/fake-users/import", form, {
+          headers: {},
+          onUploadProgress: (event) => {
+            if (event.total)
+              setImportProgress(
+                Math.round((event.loaded * 100) / event.total)
+              );
+          },
+        });
+
+        const data = res?.data ?? {};
+        const msg = data?.message ?? data?.detail ?? "Import complete";
+        const createdCount = data?.data?.created?.length ?? 0;
+        setImportResult(
+          `${msg}${createdCount ? ` — ${createdCount} rows created` : ""}`
+        );
+
+        setTimeout(() => loadFakeUsers(), 600);
+      } catch (err) {
+        console.error("Import failed:", err);
+        const resp = err?.response?.data;
+        let message = err?.message || "Import failed";
+
+        if (resp) {
+          if (typeof resp === "string") {
+            message = resp;
+          } else if (Array.isArray(resp)) {
+            try {
+              message = JSON.stringify(resp, null, 2);
+            } catch {
+              message = String(resp);
+            }
+          } else if (resp.detail && typeof resp.detail === "string") {
+            message = resp.detail;
+          } else if (resp.message && typeof resp.message === "string") {
+            message = resp.message;
+          } else {
+            try {
+              message = JSON.stringify(resp, null, 2);
+            } catch {
+              message = String(resp);
+            }
+          }
+        } else if (err.message) {
+          message = err.message;
+        }
+
+        setImportError(message);
+      } finally {
+        setImporting(false);
+        setTimeout(() => setImportProgress(0), 600);
       }
+    };
+    input.click();
+  };
+
+  const exportCSV = () => {
+    const rows = [["Name", "Email", "City", "Target Audience", "Status", "Created"]];
+    Object.entries(usersByCity).forEach(([cityKey, arr]) => {
+      arr.forEach((u) => {
+        rows.push([
+          (u.name ?? "").replace(/"/g, '""'),
+          (u.email ?? "").replace(/"/g, '""'),
+          cityKey,
+          (u.target_audience ?? "").replace(/"/g, '""'),
+          (u.status ?? "").replace(/"/g, '""'),
+          (u.created_at ?? "").replace(/"/g, '""'),
+        ]);
+      });
+    });
+
+    if (rows.length > MAX_EXPORT_ROWS) {
+      alert("Too many rows to export. Please narrow down the selection.");
+      return;
+    }
+
+    const csv = rows.map((r) => `"${r.join('","')}"`).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "fake_users.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  // --- Status toggle (email-based, no numeric id required) ---
+  const updateStatusOnServer = async (email, nextStatus) => {
+    if (!email) throw new Error("Missing email for status update");
+    const body = new URLSearchParams();
+    body.append("email", email);
+    body.append("status", nextStatus);
+
+    // endpoint: PUT /admin/fake-users/status (expects form fields 'email' and 'status')
+    // If your axios baseURL includes "/api", keep the path as "/admin/fake-users/status".
+    const path = "/admin/fake-users/status";
+
+    return axios.put(path, body.toString(), {
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
     });
   };
 
-  const toggleUserStatus = (userId) => {
-    setFakeUsers(prev => prev.map(user => 
-      user.id === userId 
-        ? { ...user, status: user.status === 'active' ? 'blocked' : 'active' }
-        : user
-    ));
-  };
+  const handleToggleStatus = async (u) => {
+    const current = String(u.status || "").toLowerCase();
+    const next = current === "active" ? "blocked" : "active";
 
-  const targetAudiences = [
-    'tourists',
-    'students',
-    'professionals',
-    'locals',
-    'expats',
-    'digital nomads',
-  ];
-
-  const generateRandomName = () => {
-    const firstNames = [
-      'Alex', 'Maria', 'John', 'Sophie', 'Carlos', 'Emma', 'Marco', 'Lisa',
-      'David', 'Anna', 'Pedro', 'Claire', 'Miguel', 'Laura', 'Pablo', 'Sara',
-    ];
-    const lastNames = [
-      'Garcia', 'Smith', 'Rodriguez', 'Johnson', 'Martinez', 'Brown', 'Lopez',
-      'Wilson', 'Gonzalez', 'Taylor', 'Anderson', 'Thomas', 'Jackson', 'White',
-    ];
-    
-    const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
-    const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
-    
-    return `${firstName} ${lastName}`;
-  };
-
-  const generateRandomEmail = (name) => {
-    const cleanName = name.toLowerCase().replace(/\s+/g, '.');
-    return `${cleanName}.fake@betogether.com`;
-  };
-
-  const handleCityChange = (e) => {
-    const selectedValue = e.target.value;
-    const [city, country] = selectedValue.split('|');
-    setFormData(prev => ({ ...prev, city, country }));
-  };
-
-  const generateFakeUsers = async () => {
-    setIsGenerating(true);
-    
-    // Simulate generation delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    const newUsers = [];
-    
-    for (let i = 0; i < formData.count; i++) {
-      const name = generateRandomName();
-      const user = {
-        id: Date.now().toString() + i,
-        name,
-        email: generateRandomEmail(name),
-        city: formData.city,
-        country: formData.country,
-        targetAudience: formData.targetAudience,
-        createdAt: new Date().toISOString(),
-        status: 'active',
-      };
-      newUsers.push(user);
+    const email = (u.email || "").trim();
+    if (!email) {
+      alert("Cannot update this user: missing email.");
+      return;
     }
-    
-    setFakeUsers(prev => [...newUsers, ...prev]);
-    setIsGenerating(false);
+
+    if (!confirm(`Set ${u.name} (${email}) to ${next}?`)) return;
+
+    try {
+      await updateStatusOnServer(email, next);
+      await loadFakeUsers();
+    } catch (err) {
+      console.error("Failed to update status", err);
+      if (err?.response?.data) console.error("server response:", err.response.data);
+      alert("Failed to update status. See console/network for server response (422/400 details).");
+    }
   };
 
-  const getUsersGroupedByCity = () => {
-    const grouped = fakeUsers.reduce((acc, user) => {
-      const key = `${user.city}, ${user.country}`;
-      if (!acc[key]) {
-        acc[key] = [];
-      }
-      acc[key].push(user);
-      return acc;
-    }, {});
-    
-    return grouped;
-  };
-
-  const groupedUsers = getUsersGroupedByCity();
-
+  /* ----------------------- Render ----------------------- */
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div>
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Fake User Creation</h2>
-          <p className="text-gray-600">Generate realistic test users for different cities and audiences</p>
+          <h2 className="text-2xl font-bold">Fake User Creation</h2>
+          <p className="text-gray-500 text-sm">
+            Generate realistic test users for different cities and audiences
+          </p>
         </div>
-        <div className="flex items-center space-x-2 text-sm text-gray-600">
-          <Users className="w-4 h-4" />
-          <span>{fakeUsers.length} fake users created</span>
-        </div>
-        <div className="flex gap-2">
+
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-gray-600 mr-2">
+            {Object.values(usersByCity).flat().length} fake users created
+          </div>
+
           <button
-            onClick={() => setShowCreateForm(true)}
-            className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            onClick={() => {
+              setCity(CITY_OPTIONS[0].value);
+              handleGenerate();
+            }}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md shadow"
+            disabled={generating}
           >
-            <Shuffle className="w-4 h-4" />
-            <span>Generate Users</span>
+            ⤴ Generate Users
           </button>
-          <label className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors cursor-pointer">
-            <Upload className="w-4 h-4" />
-            <span>Import CSV</span>
-            <input
-              type="file"
-              accept=".csv"
-              onChange={handleImportCSV}
-              className="hidden"
-            />
-          </label>
+
           <button
-            onClick={downloadCSV}
-            className="flex items-center space-x-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+            onClick={handleImport}
+            className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md shadow"
+            disabled={importing}
           >
-            <Download className="w-4 h-4" />
-            <span>Download CSV</span>
+            ⤴ Import CSV
+          </button>
+
+          <button
+            onClick={exportCSV}
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md shadow"
+          >
+            ⬇ Download CSV
           </button>
         </div>
       </div>
 
-      {/* Import CSV Modal */}
-      {showImportModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-              Import CSV File
-            </h3>
-            <div className="mb-4">
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                Selected file: <span className="font-medium">{importFile?.name}</span>
-              </p>
-              <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">Expected CSV format:</p>
-                <code className="text-xs text-gray-800 dark:text-gray-200">
-                  Name, Email, City, Country, Target Audience, Status
-                </code>
-              </div>
-            </div>
-            <div className="flex space-x-3">
-              <button
-                onClick={() => {
-                  setShowImportModal(false);
-                  setImportFile(null);
-                }}
-                className="flex-1 px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={processImportCSV}
-                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Import
-              </button>
-            </div>
+      {/* Import status */}
+      {importing && (
+        <div className="bg-white p-3 rounded mb-4">
+          <div className="text-sm text-gray-700">
+            Uploading CSV... {importProgress}%
+          </div>
+          <div className="w-full bg-gray-100 h-2 rounded mt-2">
+            <div
+              style={{ width: `${importProgress}%` }}
+              className="h-2 rounded bg-blue-500"
+            />
           </div>
         </div>
       )}
+      {importResult && (
+        <div className="bg-green-50 text-green-800 p-3 rounded mb-4">
+          {importResult}
+        </div>
+      )}
+      {importError && (
+        <div className="bg-red-50 text-red-800 p-3 rounded mb-4">
+          <div className="font-medium">Import error:</div>
+          <pre className="whitespace-pre-wrap text-sm mt-1">{importError}</pre>
+        </div>
+      )}
 
-      {/* Generation Form */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Generate Fake Users</h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {/* City Selection */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              City *
-            </label>
-            <select
-              value={`${formData.city}|${formData.country}`}
-              onChange={handleCityChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              {citiesData.map((countryGroup) => (
-                <optgroup key={countryGroup.country} label={countryGroup.country}>
-                  {countryGroup.cities.map((city) => (
-                    <option
-                      key={`${city.name}-${countryGroup.country}`}
-                      value={`${city.name}|${countryGroup.country}`}
-                      className={city.name === 'Barcelona' ? 'font-semibold bg-blue-50' : ''}
-                    >
-                      {city.name} {city.name === 'Barcelona' ? '(Launch City)' : ''}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </div>
+      {/* generate form */}
+      <div className="bg-white p-6 rounded-lg shadow mb-6">
+        <h3 className="text-lg font-semibold mb-4">Generate Fake Users</h3>
 
-          {/* Target Audience */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Target Audience *
-            </label>
+            <label className="text-sm text-gray-600">City *</label>
             <select
-              value={formData.targetAudience}
-              onChange={(e) => setFormData(prev => ({ ...prev, targetAudience: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              className="w-full border rounded-md px-3 py-2"
             >
-              {targetAudiences.map((audience) => (
-                <option key={audience} value={audience} className="capitalize">
-                  {audience}
+              {CITY_OPTIONS.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* Count */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Number of Users
-            </label>
+            <label className="text-sm text-gray-600">Target Audience *</label>
+            <select
+              value={audience}
+              onChange={(e) => setAudience(e.target.value)}
+              className="w-full border rounded-md px-3 py-2"
+            >
+              {AUDIENCES.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-sm text-gray-600">Number of Users</label>
             <input
+              value={count}
+              onChange={(e) => setCount(e.target.value)}
               type="number"
               min="1"
-              max="50"
-              value={formData.count}
-              onChange={(e) => setFormData(prev => ({ ...prev, count: parseInt(e.target.value) || 1 }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full border rounded-md px-3 py-2"
             />
           </div>
 
-          {/* Generate Button */}
-          <div className="flex items-end">
+          <div className="flex items-end justify-end">
             <button
-              onClick={generateFakeUsers}
-              disabled={isGenerating}
-              className="w-full flex items-center justify-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={handleGenerate}
+              disabled={generating}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md shadow disabled:opacity-50"
             >
-              {isGenerating ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  <span>Generating...</span>
-                </>
-              ) : (
-                <>
-                  <Shuffle className="w-4 h-4" />
-                  <span>Generate</span>
-                </>
-              )}
+              {generating ? "Generating…" : "↻ Generate"}
             </button>
           </div>
         </div>
 
-        {/* Barcelona Launch Notice */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="flex items-start space-x-2">
-            <MapPin className="w-5 h-5 text-blue-600 mt-0.5" />
-            <div>
-              <h4 className="text-sm font-medium text-blue-900">Initial Launch Configuration</h4>
-              <p className="text-sm text-blue-800 mt-1">
-                The platform is initially launching in Barcelona to gather user feedback. 
-                Additional cities will be enabled in future phases based on user engagement and feedback.
-              </p>
-            </div>
+        <div className="mt-4 border rounded-md p-4 bg-blue-50 text-sm text-blue-800">
+          <div className="font-medium mb-1">Initial Launch Configuration</div>
+          <div className="text-sm text-blue-700">
+            The platform is initially launching in Barcelona to gather user
+            feedback. Additional cities will be enabled in future phases based
+            on user engagement and feedback.
           </div>
         </div>
       </div>
 
-      {/* Generated Users by City */}
-      <div className="space-y-6">
-        {Object.entries(groupedUsers).map(([cityCountry, users]) => (
-          <div key={cityCountry} className="bg-white rounded-lg shadow-sm border border-gray-200">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <MapPin className="w-5 h-5 text-gray-500" />
-                <h3 className="text-lg font-semibold text-gray-900">{cityCountry}</h3>
-                <span className="px-2 py-1 bg-gray-100 text-gray-600 text-sm rounded-full">
-                  {users.length} users
-                </span>
+      {/* per-city cards */}
+      {loading ? (
+        <div className="bg-white p-6 rounded-lg shadow text-center text-gray-500">
+          Loading...
+        </div>
+      ) : Object.keys(usersByCity).length === 0 ? (
+        <div className="bg-white p-6 rounded-lg shadow text-center text-gray-500">
+          No fake users created
+        </div>
+      ) : (
+        Object.entries(usersByCity).map(([cityKey, arr]) => (
+          <div key={cityKey} className="bg-white p-4 rounded-lg shadow mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="text-xl">📍</div>
+                <div>
+                  <div className="text-lg font-semibold">{cityLabel(cityKey)}</div>
+                  <div className="text-xs text-gray-500">{arr.length} users</div>
+                </div>
               </div>
-              {cityCountry.includes('Barcelona') && (
-                <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium">
+
+              <div>
+                <button className="text-sm bg-blue-50 px-3 py-1 rounded-full text-blue-700 border border-blue-100">
                   Launch City
-                </span>
-              )}
+                </button>
+              </div>
             </div>
-            
+
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
+              <table className="w-full text-left">
+                <thead className="bg-gray-50 text-gray-600 text-sm">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Name
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Email
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Target Audience
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Created
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
+                    <th className="p-3">Name</th>
+                    <th className="p-3">Email</th>
+                    <th className="p-3">Target Audience</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3">Created</th>
+                    <th className="p-3">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {users.map((user) => (
-                    <tr key={user.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center space-x-2">
-                          <UserPlus className="w-4 h-4 text-gray-400" />
-                          <span className="text-sm font-medium text-gray-900">{user.name}</span>
+
+                <tbody className="text-sm">
+                  {arr.map((u) => (
+                    <tr key={u.id} className="border-t">
+                      <td className="p-3 flex items-center gap-3">
+                        <span className="text-gray-400">👤</span>
+                        <div>
+                          <div className="font-medium">{u.name}</div>
+                          <div className="text-gray-500 text-xs">{u.email}</div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                        {user.email}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full capitalize">
-                          {user.targetAudience}
+                      <td className="p-3">{u.email}</td>
+                      <td className="p-3">
+                        <span className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs">
+                          {audienceLabelFromString(u.target_audience)}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 text-xs rounded-full font-medium ${
-                          user.status === 'active'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-red-100 text-red-800'
-                        }`}>
-                          {user.status}
-                        </span>
+                      <td className="p-3">
+                        {String(u.status).toLowerCase() === "active" ? (
+                          <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">
+                            active
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-full">
+                            {u.status ?? "blocked"}
+                          </span>
+                        )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(user.createdAt).toLocaleDateString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="p-3">{formatDate(u.created_at)}</td>
+                      <td className="p-3">
                         <button
-                          onClick={() => toggleUserStatus(user.id)}
-                          className={`inline-flex items-center px-3 py-1 rounded-md text-sm font-semibold transition-colors ${
-                            user.status === 'active'
-                              ? 'bg-red-500 text-white hover:bg-red-600'
-                              : 'bg-green-500 text-white hover:bg-green-600'
+                          onClick={() => handleToggleStatus(u)}
+                          className={`px-2 py-1 rounded-md text-sm ${
+                            String(u.status).toLowerCase() === "active"
+                              ? "bg-red-50 text-red-600 hover:bg-red-100"
+                              : "bg-green-50 text-green-700 hover:bg-green-100"
                           }`}
-                          title={user.status === 'active' ? 'Block User' : 'Activate User'}
+                          title={String(u.status).toLowerCase() === "active" ? "Block user" : "Activate user"}
                         >
-                          {user.status === 'active' ? <Ban className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
+                          {String(u.status).toLowerCase() === "active" ? "⛔ Block" : "✔ Activate"}
                         </button>
                       </td>
                     </tr>
@@ -457,8 +529,8 @@ const FakeUsers = () => {
               </table>
             </div>
           </div>
-        ))}
-      </div>
+        ))
+      )}
     </div>
   );
 };
