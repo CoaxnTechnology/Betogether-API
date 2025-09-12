@@ -20,9 +20,8 @@ from faker import Faker
 from passlib.context import CryptContext
 from jose import jwt
 from utils import jwt_handler
-
+from dependencies import get_current_user
 from database import get_db
-from dependencies import admin_required
 import models
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -92,6 +91,14 @@ ALLOWED_CITY_NAMES = {c["name"] for country in ALLOWED_CITIES for c in country["
 MAX_TAGS = 20                # <- final: tag max 20
 MAX_FAKE_USER_GENERATE = 200
 
+def admin_required(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.get("role") != "superadmin" and current_user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admins only."
+        )
+    return current_user
+    
 # ---------- Utilities ----------
 def create_access_token(data: dict, expires_minutes: int = ACCESS_TOKEN_EXPIRE_MINUTES):
     to_encode = data.copy()
@@ -822,3 +829,4 @@ def tag_suggestions(q: str = Query(..., min_length=1), limit: int = Query(12, ge
     unique = list(dict.fromkeys(found))[:min(limit, MAX_TAGS)]
     suggestions = [{"value": u, "display": prettify_tag_for_display(u)} for u in unique]
     return {"IsSuccess": True, "data": {"suggestions": suggestions}}
+
